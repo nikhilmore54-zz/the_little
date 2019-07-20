@@ -1,14 +1,26 @@
 defmodule Metex.Worker do
   use GenServer
-  require Logger
+  @name MW
 
   ## Client API
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, :ok, opts)
+    GenServer.start_link(__MODULE__, :ok, opts ++ [name: MW])
   end
 
-  def get_temperature(pid, location) do
-    GenServer.call(pid, {:location, location})
+  def get_temperature(location) do
+    GenServer.call(@name, {:location, location})
+  end
+
+  def get_stats() do
+    GenServer.call(@name, :get_state)
+  end
+
+  def reset_stats() do
+    GenServer.cast(@name, :reset_state)
+  end
+
+  def stop() do
+    GenServer.cast(@name, :stop)
   end
 
   ## Server Callbacks
@@ -18,12 +30,35 @@ defmodule Metex.Worker do
 
   def handle_call({:location, location}, _from, state) do
     case temperature_of(location) do
+      :error ->
+        {:reply, :error, state}
       temp ->
         new_state = update_state(state, location)
         {:reply, "#{temp}°C", new_state}
-      location ->
-        {:reply, :error, state}
     end
+  end
+
+  def handle_call(:get_state, _from, state) do
+    {:reply, state, state}
+  end
+
+  def handle_cast(:reset_state, _state) do
+    {:noreply, %{}}
+  end
+
+  def handle_cast(:stop, state) do
+    {:stop, :normal, state}
+  end
+
+  def handle_info(msg, state) do
+    IO.puts "received #{inspect msg}"
+    {:noreply, state}
+  end
+
+  def terminate(reason, state) do
+    IO.puts "server terminated because of #{inspect reason}"
+      inspect state
+    :ok
   end
 
   ## Helper Functions
@@ -41,7 +76,7 @@ defmodule Metex.Worker do
   end
 
   defp parse_response(params) do
-    :error_in_parse_response
+    :error
   end
 
   defp compute_temperature(json) do
@@ -49,7 +84,7 @@ defmodule Metex.Worker do
       temp = (json["main"]["temp"] - 273.15) |> Float.round(1)
     rescue
       _ -> 
-        :error_in_compute_temperature
+        :error
     end
   end
 
